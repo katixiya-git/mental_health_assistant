@@ -1,0 +1,25 @@
+# ===== Java / Maven（backendCode/ai-project）=====
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+
+# ===== Node / Vite（frontendCode/ai-vue）=====
+node_modules/
+dist/
+dist-ssr/
+.npm-cache/
+*.local
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 日志 =====
+*.log
