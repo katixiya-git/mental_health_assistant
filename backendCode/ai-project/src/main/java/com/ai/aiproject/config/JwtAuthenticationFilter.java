@@ -25,14 +25,19 @@ import java.util.Collections;
  */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+    /** 认证通过后，原始 JWT 存入 request attribute 的 key（供 controller 复用） */
+    public static final String RAW_TOKEN_ATTR = "jwtRawToken";
+
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     private final JwtTool jwtTool;
     private final JwtConfig jwtConfig;
+    private final TokenBlacklist tokenBlacklist;
 
-    public JwtAuthenticationFilter(JwtTool jwtTool, JwtConfig jwtConfig) {
+    public JwtAuthenticationFilter(JwtTool jwtTool, JwtConfig jwtConfig, TokenBlacklist tokenBlacklist) {
         this.jwtTool = jwtTool;
         this.jwtConfig = jwtConfig;
+        this.tokenBlacklist = tokenBlacklist;
     }
 
     @Override
@@ -70,7 +75,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
         try {
             DecodedJWT jwt = jwtTool.parseToken(token.trim());
+            // 黑名单校验：已登出的 token 一律拒绝
+            if (tokenBlacklist.contains(token.trim())) {
+                ResponseWriteTool.writeError(response, ResultCode.TOKEN_BLOCKED.getCode(), ResultCode.TOKEN_BLOCKED.getMsg());
+                return;
+            }
             Long userId = jwt.getClaim("userId").asLong();
+            request.setAttribute(RAW_TOKEN_ATTR, token.trim());   // 透传原始 token 供 logout 使用
             UsernamePasswordAuthenticationToken authentication =
                     new UsernamePasswordAuthenticationToken(userId, null, Collections.emptyList());
             SecurityContextHolder.getContext().setAuthentication(authentication);

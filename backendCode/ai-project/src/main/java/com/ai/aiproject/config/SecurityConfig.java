@@ -23,8 +23,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtTool jwtTool, JwtConfig jwtConfig) {
-        return new JwtAuthenticationFilter(jwtTool, jwtConfig);
+    public JwtAuthenticationFilter jwtAuthenticationFilter(JwtTool jwtTool, JwtConfig jwtConfig, TokenBlacklist tokenBlacklist) {
+        return new JwtAuthenticationFilter(jwtTool, jwtConfig, tokenBlacklist);
     }
 
     @Bean
