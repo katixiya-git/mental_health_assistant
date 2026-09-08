@@ -42,8 +42,8 @@ const isLoggedIn = ref(false)
 
 // 登出
 const handleLogout = () => {
-    logout().then(() => {
-        // 清除缓存
+    logout().finally(() => {
+        // 无论接口成败都清理本地状态（token 过期/黑名单等失败场景也能退出）
         localStorage.removeItem('token')
         localStorage.removeItem('userInfo')
         // 跳转到登录页
