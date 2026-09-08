@@ -23,4 +23,9 @@ public interface UserService {
      * @return 用户详情DTO
      */
     UserLoginResponseDTO.UserDetailResponseDTO getCurrentUserInfo();
+    /**
+     * 用户登出：将当前 JWT 加入黑名单直至其过期
+     * @param token 原始 JWT（过滤器已校验通过并透传）
+     */
+    void logout(String token);
 }

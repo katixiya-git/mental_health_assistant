@@ -1,11 +1,13 @@
 package com.ai.aiproject.controller;
 
 import com.ai.aiproject.common.Result;
+import com.ai.aiproject.config.JwtAuthenticationFilter;
 import com.ai.aiproject.dto.command.UserLoginCommandDTO;
 import com.ai.aiproject.dto.command.UserRegisterCommandDTO;
 import com.ai.aiproject.dto.response.UserLoginResponseDTO;
 import com.ai.aiproject.service.UserService;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -53,5 +55,20 @@ public class UserController {
     @GetMapping("/current")
     public Result<UserLoginResponseDTO.UserDetailResponseDTO> current() {
         return Result.ok(userService.getCurrentUserInfo());
+    }
+    /**
+     * 用户登出
+     * <p>
+     * POST /api/user/logout（需登录态；过滤器已把原始 token 写入 request attribute）
+     *
+     * @return 统一成功响应（幂等：无 token 也返回成功）
+     */
+    @PostMapping("/logout")
+    public Result<Void> logout(HttpServletRequest request) {
+        String token = (String) request.getAttribute(JwtAuthenticationFilter.RAW_TOKEN_ATTR);
+        if (token != null) {
+            userService.logout(token);
+        }
+        return Result.ok();
     }
 }

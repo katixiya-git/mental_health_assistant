@@ -4,6 +4,7 @@ import com.ai.aiproject.Exception.BusinessException;
 import com.ai.aiproject.Utils.SecurityContextTool;
 import com.ai.aiproject.Utils.UserConvertTool;
 import com.ai.aiproject.Utils.JwtTool;
+import com.ai.aiproject.config.TokenBlacklist;
 import com.ai.aiproject.dto.command.UserLoginCommandDTO;
 import com.ai.aiproject.dto.command.UserRegisterCommandDTO;
 import com.ai.aiproject.dto.response.UserLoginResponseDTO;
@@ -12,6 +13,8 @@ import com.ai.aiproject.enums.ResultCode;
 import com.ai.aiproject.enums.UserType;
 import com.ai.aiproject.mapper.UserMapper;
 import com.ai.aiproject.service.UserService;
+import com.auth0.jwt.exceptions.JWTVerificationException;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +27,7 @@ public class UserServiceImpl implements UserService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTool jwtUtil;
+    private final TokenBlacklist tokenBlacklist;
 
     @Override
     public UserLoginResponseDTO login(UserLoginCommandDTO loginDTO) {
@@ -96,5 +100,18 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ResultCode.USER_NOT_EXIST.getCode(), ResultCode.USER_NOT_EXIST.getMsg());
         }
         return UserConvertTool.entityToDetailResponse(user);
+    }
+
+    @Override
+    public void logout(String token) {
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        try {
+            DecodedJWT jwt = jwtUtil.parseToken(token);
+            tokenBlacklist.add(token, jwt.getExpiresAt().getTime());
+        } catch (JWTVerificationException e) {
+            // token 已过期或无效：无需拉黑（过滤器在有效 token 请求时才会放行到此处）
+        }
     }
 }
