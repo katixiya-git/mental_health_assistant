@@ -72,16 +72,18 @@ const submitFormRef = ref(null)
 const submitForm = async (formEl) => {
     if (!formEl) return
     formEl.validate(async (valid) => {
-        register(formData).then(({ data }) => {
-            console.log(data)
-            if (!data) {
-                ElMessage.success('注册成功')
-                // 注册成功后跳转到登录页
-                router.push('/auth/login')
+        register(formData).then((res) => {
+            // 拦截器约定：code='200' 时剥壳直接返回业务数据；业务失败返回整个响应体，其 data 为 {code, msg}
+            const bizFail = res && res.data && res.data.code && res.data.code !== '200' ? res.data : null
+            if (bizFail) {
+                ElMessage.error(bizFail.msg || '注册失败，请稍后重试')
+                return
             }
-            if (data.code === "BUSINESS_ERROR") {
-               ElMessage.error(data.message)
-            }
+            ElMessage.success('注册成功')
+            // 注册成功后跳转到登录页
+            router.push('/auth/login')
+        }).catch(() => {
+            ElMessage.error('网络异常，注册失败，请稍后重试')
         })
     })
 }

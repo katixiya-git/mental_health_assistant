@@ -294,7 +294,7 @@ const sendMessage = () => {
             id: Date.now(),
             senderType: 1,
             content: message,
-            createAt: new Date().toISOString()
+            createdAt: new Date().toISOString()
         })
         startAIResponse(currentSession.value.sessionId, message)
     }
@@ -336,7 +336,7 @@ const startNewSession = (message) => {
         id: Date.now(),
         senderType: 1,
         content: message,
-        createAt: new Date().toISOString()
+        createdAt: new Date().toISOString()
        })
 
        // 开始流式对话
@@ -358,7 +358,7 @@ const startAIResponse = (sessionId, userMessage) => {
         id: `ai_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         senderType: 2,
         content: '',
-        createAt: new Date().toISOString()
+        createdAt: new Date().toISOString()
     }
     messages.value.push(aiMessage)
 

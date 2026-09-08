@@ -3,8 +3,8 @@
         <PageHead title="情绪日志" />
         <TableSearch :formItem="formItem" @search="handleSearch" />
         <el-table :data="tableData" style="width: 100%">
-            <el-table-column prop="id" label="用户ID" width="80" />
-            <el-table-column label="会话ID" width="80">
+            <el-table-column prop="id" label="日记ID" width="80" />
+            <el-table-column label="用户昵称" width="80">
                 <template #default="scope">
                     <el-avatar>{{ scope.row.nickname }}</el-avatar>
                 </template>
