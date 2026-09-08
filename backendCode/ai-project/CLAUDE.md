@@ -33,6 +33,7 @@ mvn test -Dtest=AiProjectApplicationTests   # 运行单个测试类
 | 用户 | `POST /api/user/login` | ✅ 登录：用户名或邮箱查询 + BCrypt 校验 + 状态校验 + 生成 JWT |
 | 用户 | `POST /api/user/add` | ✅ 注册：密码一致性/用户名/邮箱/手机号唯一性/userType 校验 + BCrypt 加密入库，返回用户详情（不自动登录） |
 | 用户 | `GET /api/user/current` | ✅ 获取当前登录用户信息（需 JWT，过滤器认证后从 SecurityContext 取 userId） |
+| 用户 | `POST /api/user/logout` | ✅ 登出：需登录态；将当前 JWT 加入内存黑名单（config/TokenBlacklist，至 token 过期失效，重启清空）；前端登出已改 finally 兜底 |
 | 咨询 | `POST /api/psychological-chat/session/start` | ✅ 创建会话：写 consultation_session（含 user_id）+ consultation_message（首条消息，无 user_id）；标题缺省「未声明标题」；返回 StreamChatSession |
 | 咨询 | `POST /api/psychological-chat/stream` | ✅ 流式对话：SSE（text/event-stream）推送 qwen-plus 回复，正常 chunk `data={"code":"200","data":{"content":"..."}}`（event:message），结束 `event:done`（data 非空，前端 `if(!raw) return` 需非空），错误 `event:error`（data 为 `{code,message}`，前端取 payload.message）；会话归属校验；持久化用户消息(sender_type=1)与 AI 回复(sender_type=2, ai_model=qwen-plus)；**会话记忆**：DbChatMemory 从 DB 读历史（最近 20 条）拼多轮 Prompt |
 | 咨询 | `GET /api/psychological-chat/sessions/{sessionId}/messages` | ✅ 获取会话消息：归属校验；返回 ConsultationMessageResponseDTO 列表（按创建时间升序，含 senderTypeDesc/messageTypeDesc/contentLength） |
@@ -54,7 +55,7 @@ src/main/java/com/ai/aiproject/
 ├── dto/response/                  # UserLoginResponseDTO、StructOutPutResponseDTO（StreamChatSession record）
 ├── enums/                         # ResultCode、UserType、UserStatus
 ├── common/                        # Result.java、GlobalExceptionHandler.java、SecurityConstants.java（白名单）
-├── config/                        # JwtConfig、SecurityConfig、JwtAuthenticationFilter、DbChatMemory（基于 DB 的 ChatMemory，会话记忆）
+├── config/                        # JwtConfig、SecurityConfig、JwtAuthenticationFilter、DbChatMemory（基于 DB 的 ChatMemory，会话记忆）、TokenBlacklist（内存 JWT 黑名单）
 ├── Exception/BusinessException.java   # 注意：包名大写 E
 └── Utils/                             # 注意：包名大写 U
     ├── UserConvertTool.java           # entity↔DTO 转换工具
@@ -92,9 +93,10 @@ src/main/java/com/ai/aiproject/
 ## 目标架构（后续待落地，以 `.CLAUDE/宁渡课堂-后端技术文档.md` 为准）
 
 - **AI 集成**：Spring AI（`spring-ai-openai-spring-boot-starter:1.0.0-M5`，已接入阿里云百炼），模型 `qwen-plus`，走 `/v1/chat/completions`
-- **缓存**：Spring Data Redis（依赖未引入，token 黑名单/缓存待落地）
+- **缓存**：Spring Data Redis（依赖未引入；token 黑名单已用内存实现 config/TokenBlacklist，Redis 缓存/集群共享黑名单待落地）
 - 其他：Spring AOP、Spring Mail、hutool
 - 前端已使用但未实现的接口见技术文档第 6 节（咨询/日记/知识库/文件/分析），路径以 `controller` 实际 `@RequestMapping` 为准（注意 `/api` 前缀）
+- **待补接口的逐条缺口清单（16 项，含参数/返回结构/决策点/落地顺序）见仓库根 `docs/接口缺口清单.md`，行号级前端契约证据见同目录 `前端调用契约报告.md`；开始补模块前须先制定 Plan**
 
 ### 配置要点（参考）
 - **JWT**（已落地）：`jwt.secret`、`expiration` 24h、`refresh-expiration` 7天、header `Authorization`、prefix `"Bearer "`
