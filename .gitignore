@@ -21,5 +21,14 @@ dist-ssr/
 Thumbs.db
 desktop.ini
 
+# ===== 本地临时工具目录 =====
+.pytools/
+
 # ===== 日志 =====
 *.log
+
+# ===== 个人隐私 / 参考与示例材料（不入库，锚定仓库根）=====
+/个人简历*
+/简历照片*
+/tjxt/
+/backendCode/ai-spingboot/
