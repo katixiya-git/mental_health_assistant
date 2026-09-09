@@ -37,6 +37,9 @@ mvn test -Dtest=AiProjectApplicationTests   # 运行单个测试类
 | 咨询 | `POST /api/psychological-chat/session/start` | ✅ 创建会话：写 consultation_session（含 user_id）+ consultation_message（首条消息，无 user_id）；标题缺省「未声明标题」；返回 StreamChatSession |
 | 咨询 | `POST /api/psychological-chat/stream` | ✅ 流式对话：SSE（text/event-stream）推送 qwen-plus 回复，正常 chunk `data={"code":"200","data":{"content":"..."}}`（event:message），结束 `event:done`（data 非空，前端 `if(!raw) return` 需非空），错误 `event:error`（data 为 `{code,message}`，前端取 payload.message）；会话归属校验；持久化用户消息(sender_type=1)与 AI 回复(sender_type=2, ai_model=qwen-plus)；**会话记忆**：DbChatMemory 从 DB 读历史（最近 20 条）拼多轮 Prompt |
 | 咨询 | `GET /api/psychological-chat/sessions/{sessionId}/messages` | ✅ 获取会话消息：归属校验；返回 ConsultationMessageResponseDTO 列表（按创建时间升序，含 senderTypeDesc/messageTypeDesc/contentLength） |
+| 咨询 | `GET /api/psychological-chat/sessions` | ✅ 会话分页：管理员看全部/用户看自己；分页参数兼容 pageNum/pageSize 与 currentPage/size；行含 sessionTitle/startedAt/lastMessageContent/lastMessageTime/messageCount/durationMinutes/userNickname |
+| 咨询 | `DELETE /api/psychological-chat/sessions/{sessionId}` | ✅ 删除会话：本人或管理员；级联删除消息；幂等（兼容 session_ 前缀） |
+| 咨询 | `GET /api/psychological-chat/session/{sessionId}/emotion` | ✅ 会话情绪分析（增量缓存策略 B）：无新消息返回缓存，有新消息调 qwen 重算并落库 last_emotion_analysis；AI 失败降级返回缓存/默认对象 |
 | 日记 | `POST /api/emotion-diary` | ✅ 用户记日记：user_id 取当前登录用户；主要情绪白名单校验；有正文时 best-effort 调 qwen 情绪分析（失败留空不阻塞保存）；写入 emotion_diary |
 | 日记 | `GET /api/emotion-diary/admin/page` | ✅ 管理员分页（current/size + userId + moodScreRange('1-3'/'4-6'/'7-10')）；返回 MyBatis-Plus Page{records,total}，行含 username/nickname（user 表补全）与 aiEmotionAnalysis(JSON 串)；非管理员 A0301 |
 | 日记 | `DELETE /api/emotion-diary/admin/{id}` | ✅ 管理员删除（幂等） |
@@ -58,7 +61,7 @@ src/main/java/com/ai/aiproject/
 ├── controller/UserController.java # /api/user/login、/add、/current
 ├── controller/SessionController.java # /api/psychological-chat/session/start
 ├── service/UserService.java + service/Impl/UserServiceImpl.java
-├── service/SessionService.java + service/Impl/SessionServiceImpl.java
+├── service/SessionService.java + service/Impl/SessionServiceImpl.java  # 咨询：建会话/SSE 流式/消息/分页列表/级联删除/增量情绪分析
 ├── service/EmotionDiaryService.java + service/Impl/EmotionDiaryServiceImpl.java # 情绪日记（新增/AI 分析/管理端分页删除）
 ├── controller/EmotionDiaryController.java   # /api/emotion-diary：add、admin/page、admin/{id}
 ├── entity/EmotionDiary.java + mapper/EmotionDiaryMapper.java
