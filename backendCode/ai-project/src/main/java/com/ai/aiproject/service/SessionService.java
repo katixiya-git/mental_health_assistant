@@ -1,8 +1,12 @@
 package com.ai.aiproject.service;
 
 import com.ai.aiproject.dto.ConsultationSessionCreateDTO;
+import com.ai.aiproject.dto.query.SessionPageQueryDTO;
 import com.ai.aiproject.dto.response.ConsultationMessageResponseDTO;
+import com.ai.aiproject.dto.response.SessionEmotionVO;
+import com.ai.aiproject.dto.response.SessionPageItemVO;
 import com.ai.aiproject.dto.response.StructOutPutResponseDTO;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.http.codec.ServerSentEvent;
@@ -26,5 +30,20 @@ public interface SessionService {
      * @return 消息列表
      */
     List<ConsultationMessageResponseDTO> getMessages(String sessionId);
+
+    /**
+     * 会话分页列表（管理员看全部，普通用户看自己；兼容 pageNum/pageSize 与 currentPage/size）
+     */
+    Page<SessionPageItemVO> pageSessions(SessionPageQueryDTO queryDTO);
+
+    /**
+     * 删除会话（本人或管理员；级联删除消息；幂等）
+     */
+    void deleteSession(String sessionId);
+
+    /**
+     * 会话情绪分析（增量缓存：仅新消息触发重算；AI 失败降级返回缓存/默认）
+     */
+    SessionEmotionVO getSessionEmotion(String sessionId);
 
 }

@@ -1,19 +1,27 @@
 package com.ai.aiproject.service.Impl;
 
+import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONUtil;
 import com.ai.aiproject.Exception.BusinessException;
+import com.ai.aiproject.Utils.AuthzTool;
 import com.ai.aiproject.Utils.PromptManage;
 import com.ai.aiproject.Utils.SecurityContextTool;
 import com.ai.aiproject.dto.ConsultationSessionCreateDTO;
+import com.ai.aiproject.dto.query.SessionPageQueryDTO;
 import com.ai.aiproject.dto.response.ConsultationMessageResponseDTO;
+import com.ai.aiproject.dto.response.SessionEmotionVO;
+import com.ai.aiproject.dto.response.SessionPageItemVO;
 import com.ai.aiproject.dto.response.StructOutPutResponseDTO;
 import com.ai.aiproject.entity.ConsultationMessage;
 import com.ai.aiproject.entity.ConsultationSession;
+import com.ai.aiproject.entity.User;
 import com.ai.aiproject.enums.ResultCode;
 import com.ai.aiproject.mapper.ConsultationMessageMapper;
 import com.ai.aiproject.mapper.ConsultationSessionMapper;
+import com.ai.aiproject.mapper.UserMapper;
 import com.ai.aiproject.service.SessionService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
@@ -28,8 +36,11 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -41,6 +52,7 @@ public class SessionServiceImpl implements SessionService {
     private final ConsultationSessionMapper consultationSessionMapper;
     private final OpenAiChatModel chatModel;
     private final ChatMemory chatMemory;
+    private final UserMapper userMapper;
 
     @Value("${spring.ai.openai.chat.options.model:qwen-plus}")
     private String aiModel;
@@ -202,6 +214,240 @@ public class SessionServiceImpl implements SessionService {
         dto.setMessageTypeDesc(message.getMessageTypeDesc());
         dto.calculateContentLength();
         return dto;
+    }
+
+    @Override
+    public Page<SessionPageItemVO> pageSessions(SessionPageQueryDTO queryDTO) {
+        Long userId = SecurityContextTool.getCurrentUserId();
+        boolean admin = AuthzTool.isAdmin(userMapper);
+        long current = queryDTO.getPageNum() > 0 ? queryDTO.getPageNum() : queryDTO.getCurrentPage();
+        long size = queryDTO.getPageSize() > 0 ? queryDTO.getPageSize() : queryDTO.getSize();
+        current = Math.max(1, current);
+        size = Math.max(1, size);
+
+        Page<ConsultationSession> sessionPage = consultationSessionMapper.selectPage(new Page<>(current, size),
+                Wrappers.<ConsultationSession>lambdaQuery()
+                        .eq(!admin, ConsultationSession::getUserId, userId)
+                        .orderByDesc(ConsultationSession::getStartedAt)
+                        .orderByDesc(ConsultationSession::getId));
+
+        List<Long> ownerIds = sessionPage.getRecords().stream()
+                .map(ConsultationSession::getUserId).distinct().collect(Collectors.toList());
+        Map<Long, User> userMap = ownerIds.isEmpty() ? Collections.emptyMap()
+                : userMapper.selectBatchIds(ownerIds).stream()
+                        .collect(Collectors.toMap(User::getId, u -> u));
+
+        List<SessionPageItemVO> records = new ArrayList<>();
+        for (ConsultationSession session : sessionPage.getRecords()) {
+            SessionPageItemVO vo = new SessionPageItemVO();
+            vo.setId(session.getId());
+            vo.setSessionTitle(session.getSessionTitle());
+            vo.setStartedAt(session.getStartedAt());
+            User owner = userMap.get(session.getUserId());
+            vo.setUserNickname(owner == null ? null : owner.getDisplayName());
+
+            ConsultationMessage last = consultationMessageMapper.selectOne(
+                    Wrappers.<ConsultationMessage>lambdaQuery()
+                            .eq(ConsultationMessage::getSessionId, session.getId())
+                            .orderByDesc(ConsultationMessage::getCreatedAt)
+                            .orderByDesc(ConsultationMessage::getId)
+                            .last("LIMIT 1"));
+            long count = consultationMessageMapper.selectCount(
+                    Wrappers.<ConsultationMessage>lambdaQuery()
+                            .eq(ConsultationMessage::getSessionId, session.getId()));
+            vo.setMessageCount((int) count);
+            if (last != null) {
+                vo.setLastMessageContent(last.getContent());
+                vo.setLastMessageTime(last.getCreatedAt());
+                vo.setDurationMinutes(calcDurationMinutes(session.getStartedAt(), last.getCreatedAt()));
+            } else {
+                vo.setLastMessageContent(null);
+                vo.setLastMessageTime(null);
+                vo.setDurationMinutes(0);
+            }
+            records.add(vo);
+        }
+
+        Page<SessionPageItemVO> result = new Page<>(sessionPage.getCurrent(), sessionPage.getSize(), sessionPage.getTotal());
+        result.setRecords(records);
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public void deleteSession(String sessionId) {
+        Long sessionIdLong = parseSessionIdQuiet(sessionId);
+        ConsultationSession session = consultationSessionMapper.selectById(sessionIdLong);
+        if (session == null) {
+            return; // 幂等
+        }
+        Long userId = SecurityContextTool.getCurrentUserId();
+        if (!AuthzTool.isAdmin(userMapper) && !userId.equals(session.getUserId())) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR.getCode(), "会话不存在或无权访问");
+        }
+        consultationMessageMapper.delete(Wrappers.<ConsultationMessage>lambdaQuery()
+                .eq(ConsultationMessage::getSessionId, sessionIdLong));
+        consultationSessionMapper.deleteById(sessionIdLong);
+    }
+
+    @Override
+    public SessionEmotionVO getSessionEmotion(String sessionId) {
+        Long sessionIdLong = parseSessionIdQuiet(sessionId);
+        ConsultationSession session = consultationSessionMapper.selectById(sessionIdLong);
+        Long userId = SecurityContextTool.getCurrentUserId();
+        if (session == null || (!AuthzTool.isAdmin(userMapper) && !userId.equals(session.getUserId()))) {
+            throw new BusinessException(ResultCode.BUSINESS_ERROR.getCode(), "会话不存在或无权访问");
+        }
+
+        ConsultationMessage last = consultationMessageMapper.selectOne(
+                Wrappers.<ConsultationMessage>lambdaQuery()
+                        .eq(ConsultationMessage::getSessionId, sessionIdLong)
+                        .orderByDesc(ConsultationMessage::getCreatedAt)
+                        .orderByDesc(ConsultationMessage::getId)
+                        .last("LIMIT 1"));
+        if (last == null) {
+            return defaultEmotion();   // 无消息
+        }
+        // 策略 B：无新消息且已有缓存 → 直接返回缓存
+        boolean upToDate = session.getLastEmotionUpdatedAt() != null
+                && last.getCreatedAt() != null
+                && !last.getCreatedAt().isAfter(session.getLastEmotionUpdatedAt());
+        if (upToDate && hasText(session.getLastEmotionAnalysis())) {
+            return parseStoredEmotion(session.getLastEmotionAnalysis());
+        }
+        // 有新消息 → 重算；失败降级：优先旧缓存，否则默认
+        try {
+            SessionEmotionVO vo = analyzeSessionEmotion(sessionIdLong);
+            session.setLastEmotionAnalysis(JSONUtil.toJsonStr(vo));
+            session.setLastEmotionUpdatedAt(LocalDateTime.now());
+            consultationSessionMapper.updateById(session);
+            return vo;
+        } catch (Exception e) {
+            if (hasText(session.getLastEmotionAnalysis())) {
+                return parseStoredEmotion(session.getLastEmotionAnalysis());
+            }
+            return defaultEmotion();
+        }
+    }
+
+    /**
+     * 取最近 30 条消息（按时间正序拼接）调 qwen 分析
+     */
+    private SessionEmotionVO analyzeSessionEmotion(Long sessionIdLong) {
+        List<ConsultationMessage> recent = consultationMessageMapper.selectList(
+                Wrappers.<ConsultationMessage>lambdaQuery()
+                        .eq(ConsultationMessage::getSessionId, sessionIdLong)
+                        .orderByDesc(ConsultationMessage::getCreatedAt)
+                        .orderByDesc(ConsultationMessage::getId)
+                        .last("LIMIT 30"));
+        if (recent.isEmpty()) {
+            return defaultEmotion();
+        }
+        Collections.reverse(recent); // 转时间正序
+        StringBuilder sb = new StringBuilder();
+        for (ConsultationMessage m : recent) {
+            if (m.getContent() == null || m.getContent().isBlank()) {
+                continue;
+            }
+            sb.append(Objects.equals(m.getSenderType(), 1) ? "用户：" : "AI：")
+              .append(m.getContent()).append("\n");
+        }
+        if (sb.length() == 0) {
+            return defaultEmotion();
+        }
+        Prompt prompt = new Prompt(List.of(
+                new SystemMessage(PromptManage.SESSION_EMOTION_ANALYSIS_SYSTEM_PROMPT),
+                new UserMessage("最近对话记录：\n" + sb)));
+        var response = chatModel.call(prompt);
+        String raw = response.getResult().getOutput().getContent();
+        if (raw == null || raw.isBlank()) {
+            throw new IllegalStateException("AI 情绪分析返回为空");
+        }
+        String json = raw.trim();
+        if (json.startsWith("```")) {
+            json = json.replaceFirst("^```[a-zA-Z]*\\s*", "").replaceAll("\\s*```$", "");
+        }
+        cn.hutool.json.JSONObject obj = JSONUtil.parseObj(json);
+        SessionEmotionVO vo = new SessionEmotionVO();
+        vo.setPrimaryEmotion(defaultStr(obj.getStr("primaryEmotion"), "中性"));
+        int score = obj.getInt("emotionScore", 0);
+        vo.setEmotionScore(Math.max(0, Math.min(100, score)));
+        vo.setIsNegative(Boolean.TRUE.equals(obj.getBool("isNegative")));
+        int risk = obj.getInt("riskLevel", 0);
+        vo.setRiskLevel(Math.max(0, Math.min(3, risk)));
+        vo.setSuggestion(defaultStr(obj.getStr("suggestion"), ""));
+        vo.setRiskDescription(defaultStr(obj.getStr("riskDescription"), ""));
+        vo.setImprovementSuggestions(extractImprovements(obj.getJSONArray("improvementSuggestions")));
+        return vo;
+    }
+
+    private SessionEmotionVO parseStoredEmotion(String storedJson) {
+        try {
+            cn.hutool.json.JSONObject obj = JSONUtil.parseObj(storedJson);
+            SessionEmotionVO vo = new SessionEmotionVO();
+            vo.setPrimaryEmotion(defaultStr(obj.getStr("primaryEmotion"), "中性"));
+            int score = obj.getInt("emotionScore", 50);
+            vo.setEmotionScore(Math.max(0, Math.min(100, score)));
+            vo.setIsNegative(Boolean.TRUE.equals(obj.getBool("isNegative")));
+            int risk = obj.getInt("riskLevel", 0);
+            vo.setRiskLevel(Math.max(0, Math.min(3, risk)));
+            vo.setSuggestion(defaultStr(obj.getStr("suggestion"), "情绪状态平稳"));
+            vo.setRiskDescription(defaultStr(obj.getStr("riskDescription"), ""));
+            vo.setImprovementSuggestions(extractImprovements(obj.getJSONArray("improvementSuggestions")));
+            return vo;
+        } catch (Exception e) {
+            return defaultEmotion();
+        }
+    }
+
+    private SessionEmotionVO defaultEmotion() {
+        SessionEmotionVO vo = new SessionEmotionVO();
+        vo.setPrimaryEmotion("中性");
+        vo.setEmotionScore(50);
+        vo.setIsNegative(false);
+        vo.setRiskLevel(0);
+        vo.setSuggestion("情绪状态平稳");
+        vo.setImprovementSuggestions(new ArrayList<>());
+        vo.setRiskDescription("");
+        return vo;
+    }
+
+    private List<String> extractImprovements(cn.hutool.json.JSONArray improvements) {
+        List<String> list = new ArrayList<>();
+        if (improvements != null) {
+            for (int i = 0; i < improvements.size(); i++) {
+                String s = improvements.getStr(i);
+                if (s != null && !s.isBlank()) {
+                    list.add(s);
+                }
+            }
+        }
+        return list;
+    }
+
+    private int calcDurationMinutes(LocalDateTime startedAt, LocalDateTime endAt) {
+        if (startedAt == null || endAt == null) {
+            return 0;
+        }
+        long minutes = ChronoUnit.MINUTES.between(startedAt, endAt);
+        return (int) Math.max(0, minutes);
+    }
+
+    /** 会话 ID 解析，非法格式抛 PARAM_INVALID */
+    private Long parseSessionIdQuiet(String sessionId) {
+        try {
+            return parseSessionId(sessionId);
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ResultCode.PARAM_INVALID.getCode(), "sessionId格式不正确");
+        }
+    }
+
+    private String defaultStr(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private boolean hasText(String s) {
+        return s != null && !s.isBlank();
     }
 
     /**
