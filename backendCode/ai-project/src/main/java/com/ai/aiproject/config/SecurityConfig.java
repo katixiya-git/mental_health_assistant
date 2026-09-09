@@ -33,6 +33,9 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // SSE 流式接口：Servlet 异步再分发会再次过安全链导致 AuthorizationDenied，
+                // 故在此放行授权；鉴权仍由 JwtAuthenticationFilter 负责（未在白名单，无/坏 token 仍 401）
+                .requestMatchers("/api/psychological-chat/stream").permitAll()
                 .requestMatchers(SecurityConstants.PUBLIC_URLS).permitAll()
                 .anyRequest().authenticated())
             .formLogin(AbstractHttpConfigurer::disable)

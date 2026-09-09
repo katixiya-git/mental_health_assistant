@@ -121,33 +121,39 @@ public class SessionServiceImpl implements SessionService {
             return Flux.just(sseError(ResultCode.BUSINESS_ERROR, "会话不存在或无权访问"));
         }
 
-        // 3. 读取会话历史（多轮记忆，取最近 20 条，不含当前消息）
-        List<Message> history = chatMemory.get(sessionIdLong.toString(), 20);
+        // 3-5. 多轮记忆 / 持久化用户消息 / 组装 Prompt（急切阶段异常统一转 SSE error，避免打断连接）
+        List<Message> history;
+        Prompt prompt;
+        try {
+            history = chatMemory.get(sessionIdLong.toString(), 20);
 
-        // 4. 持久化用户消息
-        consultationMessageMapper.insert(ConsultationMessage.builder()
-                .sessionId(sessionIdLong)
-                .senderType(1)          // 1 用户
-                .messageType(1)         // 1 文本
-                .content(userMessage)
-                .createdAt(LocalDateTime.now())
-                .build());
+            consultationMessageMapper.insert(ConsultationMessage.builder()
+                    .sessionId(sessionIdLong)
+                    .senderType(1)          // 1 用户
+                    .messageType(1)         // 1 文本
+                    .content(userMessage)
+                    .createdAt(LocalDateTime.now())
+                    .build());
 
-        // 5. 构建 Prompt（系统提示词 + 历史 + 当前用户消息）
-        List<Message> promptMessages = new ArrayList<>();
-        promptMessages.add(new SystemMessage(PromptManage.PSYCHOLOGICAL_SUPPORT_SYSTEM_PROMPT));
-        promptMessages.addAll(history);
-        promptMessages.add(new UserMessage(userMessage));
-        Prompt prompt = new Prompt(promptMessages);
+            List<Message> promptMessages = new ArrayList<>();
+            promptMessages.add(new SystemMessage(PromptManage.PSYCHOLOGICAL_SUPPORT_SYSTEM_PROMPT));
+            promptMessages.addAll(history);
+            promptMessages.add(new UserMessage(userMessage));
+            prompt = new Prompt(promptMessages);
+        } catch (Exception e) {
+            return Flux.just(sseError(ResultCode.SYSTEM_ERROR, e.getMessage()));
+        }
 
         // 5. 流式调用 + 转 SSE（data 为 JSON：{code:"200", data:{content}}，与前端 fetchEventSource 契约一致）+ 流结束时持久化 AI 回复
         StringBuilder aiReply = new StringBuilder();
         return chatModel.stream(prompt)
+                .filter(resp -> {
+                    // Reactor 的 map 不允许返回 null，先过滤空 chunk
+                    String content = resp.getResult().getOutput().getContent();
+                    return content != null && !content.isBlank();
+                })
                 .map(resp -> {
                     String content = resp.getResult().getOutput().getContent();
-                    if (content == null || content.isBlank()) {
-                        return null;   // 过滤空 chunk
-                    }
                     aiReply.append(content);
                     return ServerSentEvent.<String>builder().event("message")
                             .data(JSONUtil.toJsonStr(JSONUtil.createObj()
@@ -155,7 +161,6 @@ public class SessionServiceImpl implements SessionService {
                                     .set("data", JSONUtil.createObj().set("content", content))))
                             .build();
                 })
-                .filter(Objects::nonNull)
                 .concatWith(Flux.just(ServerSentEvent.<String>builder().event("done").data("completed").build()))
                 .doOnComplete(() -> consultationMessageMapper.insert(
                         ConsultationMessage.builder()
