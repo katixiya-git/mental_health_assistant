@@ -64,6 +64,7 @@
     import { dayjs, ElMessage } from 'element-plus'
     import { ref, reactive, onMounted } from 'vue'
     import { getKnowledgeList } from '@/api/frontend'
+    import { fileBaseUrl } from '@/config/index.js'
     import { useRouter } from 'vue-router'
 
     const router = useRouter()
@@ -96,7 +97,7 @@
     }
     // 获取封面图片
     const getImage = (url) => {
-        return url ? 'http://159.75.169.224:1235' + url : 'https://file.itndedu.com/psychology_ai.png'
+        return url ? fileBaseUrl + url : 'https://file.itndedu.com/psychology_ai.png'
     }
 
     const handleChange = (page) => {
