@@ -37,7 +37,10 @@ mvn test -Dtest=AiProjectApplicationTests   # 运行单个测试类
 | 咨询 | `POST /api/psychological-chat/session/start` | ✅ 创建会话：写 consultation_session（含 user_id）+ consultation_message（首条消息，无 user_id）；标题缺省「未声明标题」；返回 StreamChatSession |
 | 咨询 | `POST /api/psychological-chat/stream` | ✅ 流式对话：SSE（text/event-stream）推送 qwen-plus 回复，正常 chunk `data={"code":"200","data":{"content":"..."}}`（event:message），结束 `event:done`（data 非空，前端 `if(!raw) return` 需非空），错误 `event:error`（data 为 `{code,message}`，前端取 payload.message）；会话归属校验；持久化用户消息(sender_type=1)与 AI 回复(sender_type=2, ai_model=qwen-plus)；**会话记忆**：DbChatMemory 从 DB 读历史（最近 20 条）拼多轮 Prompt |
 | 咨询 | `GET /api/psychological-chat/sessions/{sessionId}/messages` | ✅ 获取会话消息：归属校验；返回 ConsultationMessageResponseDTO 列表（按创建时间升序，含 senderTypeDesc/messageTypeDesc/contentLength） |
-| 其余 | 情绪日记/知识库/文件/分析 | ❌ 未实现 |
+| 日记 | `POST /api/emotion-diary` | ✅ 用户记日记：user_id 取当前登录用户；主要情绪白名单校验；有正文时 best-effort 调 qwen 情绪分析（失败留空不阻塞保存）；写入 emotion_diary |
+| 日记 | `GET /api/emotion-diary/admin/page` | ✅ 管理员分页（current/size + userId + moodScreRange('1-3'/'4-6'/'7-10')）；返回 MyBatis-Plus Page{records,total}，行含 username/nickname（user 表补全）与 aiEmotionAnalysis(JSON 串)；非管理员 A0301 |
+| 日记 | `DELETE /api/emotion-diary/admin/{id}` | ✅ 管理员删除（幂等） |
+| 其余 | 知识库/文件/分析 | ❌ 未实现 |
 
 ## 目录结构（当前）
 
@@ -48,6 +51,10 @@ src/main/java/com/ai/aiproject/
 ├── controller/SessionController.java # /api/psychological-chat/session/start
 ├── service/UserService.java + service/Impl/UserServiceImpl.java
 ├── service/SessionService.java + service/Impl/SessionServiceImpl.java
+├── service/EmotionDiaryService.java + service/Impl/EmotionDiaryServiceImpl.java # 情绪日记（新增/AI 分析/管理端分页删除）
+├── controller/EmotionDiaryController.java   # /api/emotion-diary：add、admin/page、admin/{id}
+├── entity/EmotionDiary.java + mapper/EmotionDiaryMapper.java
+├── dto/command/EmotionDiaryAddCommandDTO、dto/query/EmotionDiaryAdminPageQueryDTO、dto/response/EmotionDiaryAdminItemDTO
 ├── mapper/UserMapper.java、ConsultationSessionMapper.java、ConsultationMessageMapper.java  # extends BaseMapper
 ├── entity/User.java、ConsultationSession.java、ConsultationMessage.java  # MyBatis Plus 注解
 ├── dto/command/                   # UserLoginCommandDTO、UserRegisterCommandDTO
@@ -55,13 +62,14 @@ src/main/java/com/ai/aiproject/
 ├── dto/response/                  # UserLoginResponseDTO、StructOutPutResponseDTO（StreamChatSession record）
 ├── enums/                         # ResultCode、UserType、UserStatus
 ├── common/                        # Result.java、GlobalExceptionHandler.java、SecurityConstants.java（白名单）
-├── config/                        # JwtConfig、SecurityConfig、JwtAuthenticationFilter、DbChatMemory（基于 DB 的 ChatMemory，会话记忆）、TokenBlacklist（内存 JWT 黑名单）
+├── config/                        # JwtConfig、SecurityConfig、JwtAuthenticationFilter、DbChatMemory（基于 DB 的 ChatMemory，会话记忆）、TokenBlacklist（内存 JWT 黑名单）、MybatisPlusConfig（分页拦截器）
 ├── Exception/BusinessException.java   # 注意：包名大写 E
 └── Utils/                             # 注意：包名大写 U
     ├── UserConvertTool.java           # entity↔DTO 转换工具
     ├── JwtTool.java                   # JWT 生成/解析工具
     ├── ResponseWriteTool.java         # 过滤器认证失败响应写入工具（HTTP 401 + Result JSON）
-    └── PromptManage.java              # AI 系统提示词（心理疏导）
+    ├── PromptManage.java              # AI 系统提示词（心理疏导 + 日记情绪分析）
+    └── EmotionDiaryTool.java          # 主要情绪白名单 + 评分范围解析（纯静态，含单测）
 ```
 
 ## 分层与代码约定
