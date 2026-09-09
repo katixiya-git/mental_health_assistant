@@ -51,7 +51,7 @@ mvn test -Dtest=AiProjectApplicationTests   # 运行单个测试类
 | 知识 | `PUT /api/knowledge/article/{id}/status` | ✅ 管理员发布(1)/下线(2)，发布时补 published_at |
 | 知识 | `DELETE /api/knowledge/article/{id}` | ✅ 管理员删除（幂等） |
 | 文件 | `POST /api/file/upload` | ✅ 管理员上传图片到阿里云 OSS（公共读；≤5MB 图片；返回 {filePath}，前端拼 url-prefix 显示） |
-| 其余 | 数据分析 | ❌ 未实现 |
+| 分析 | `GET /api/data-analytics/overview` | ✅ 看板总览（管理员）：systemOverview 全量/今日/近7天活跃口径 + emotionTrend/consultationStats.dailyTrend/userActivity（近 7 天按日、零填充、MM-dd、无日记日 avgMoodScore=null）；口径见规格文档 |
 
 ## 目录结构（当前）
 
@@ -72,6 +72,7 @@ src/main/java/com/ai/aiproject/
 ├── controller/FileController.java + service/FileStorageService(.Impl)        # /api/file/upload（OSS）
 ├── config/OssProperties.java              # oss.* 配置（AccessKey 取环境变量）
 ├── dto/command/KnowledgeArticleSaveCommandDTO、ArticleStatusChangeDTO、dto/query/KnowledgeArticlePageQueryDTO、dto/response/KnowledgeCategoryVO/KnowledgeArticlePageItemVO/KnowledgeArticleDetailVO
+├── mapper/AnalyticsMapper.java + service/AnalyticsService(.Impl) + controller/DataAnalyticsController.java  # 数据分析 /api/data-analytics/overview（近7天聚合）
 ├── mapper/UserMapper.java、ConsultationSessionMapper.java、ConsultationMessageMapper.java  # extends BaseMapper
 ├── entity/User.java、ConsultationSession.java、ConsultationMessage.java  # MyBatis Plus 注解
 ├── dto/command/                   # UserLoginCommandDTO、UserRegisterCommandDTO
