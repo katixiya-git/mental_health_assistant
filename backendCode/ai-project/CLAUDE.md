@@ -40,7 +40,15 @@ mvn test -Dtest=AiProjectApplicationTests   # 运行单个测试类
 | 日记 | `POST /api/emotion-diary` | ✅ 用户记日记：user_id 取当前登录用户；主要情绪白名单校验；有正文时 best-effort 调 qwen 情绪分析（失败留空不阻塞保存）；写入 emotion_diary |
 | 日记 | `GET /api/emotion-diary/admin/page` | ✅ 管理员分页（current/size + userId + moodScreRange('1-3'/'4-6'/'7-10')）；返回 MyBatis-Plus Page{records,total}，行含 username/nickname（user 表补全）与 aiEmotionAnalysis(JSON 串)；非管理员 A0301 |
 | 日记 | `DELETE /api/emotion-diary/admin/{id}` | ✅ 管理员删除（幂等） |
-| 其余 | 知识库/文件/分析 | ❌ 未实现 |
+| 知识 | `GET /api/knowledge/category/tree` | ✅ 分类树（扁平 [{id, categoryName}]） |
+| 知识 | `GET /api/knowledge/article/page` | ✅ 双模式分页：管理员可筛选 title/categoryId/status('0'/'1'/'2')；普通用户强制 status=1 并按 publishedAt/readCount 排序；返回 Page{records,total} 含 categoryName/authorName |
+| 知识 | `GET /api/knowledge/article/{id}` | ✅ 详情：普通用户仅已发布且 read_count+1；管理员任意状态不计数；返回 tags/tagArray/content 等 |
+| 知识 | `POST /api/knowledge/article` | ✅ 管理员新建（落草稿 0，author_id=当前管理员，body 的 uuid id 忽略） |
+| 知识 | `PUT /api/knowledge/article/{id}` | ✅ 管理员编辑（不改变 status/published_at） |
+| 知识 | `PUT /api/knowledge/article/{id}/status` | ✅ 管理员发布(1)/下线(2)，发布时补 published_at |
+| 知识 | `DELETE /api/knowledge/article/{id}` | ✅ 管理员删除（幂等） |
+| 文件 | `POST /api/file/upload` | ✅ 管理员上传图片到阿里云 OSS（公共读；≤5MB 图片；返回 {filePath}，前端拼 url-prefix 显示） |
+| 其余 | 数据分析 | ❌ 未实现 |
 
 ## 目录结构（当前）
 
@@ -55,6 +63,12 @@ src/main/java/com/ai/aiproject/
 ├── controller/EmotionDiaryController.java   # /api/emotion-diary：add、admin/page、admin/{id}
 ├── entity/EmotionDiary.java + mapper/EmotionDiaryMapper.java
 ├── dto/command/EmotionDiaryAddCommandDTO、dto/query/EmotionDiaryAdminPageQueryDTO、dto/response/EmotionDiaryAdminItemDTO
+├── service/KnowledgeCategoryService(.Impl)、KnowledgeArticleService(.Impl)   # 知识库：双模式分页/阅读计数/管理员写
+├── controller/KnowledgeController.java   # /api/knowledge：category/tree、article CRUD/status/page
+├── entity/KnowledgeCategory.java、KnowledgeArticle.java + mapper/×2
+├── controller/FileController.java + service/FileStorageService(.Impl)        # /api/file/upload（OSS）
+├── config/OssProperties.java              # oss.* 配置（AccessKey 取环境变量）
+├── dto/command/KnowledgeArticleSaveCommandDTO、ArticleStatusChangeDTO、dto/query/KnowledgeArticlePageQueryDTO、dto/response/KnowledgeCategoryVO/KnowledgeArticlePageItemVO/KnowledgeArticleDetailVO
 ├── mapper/UserMapper.java、ConsultationSessionMapper.java、ConsultationMessageMapper.java  # extends BaseMapper
 ├── entity/User.java、ConsultationSession.java、ConsultationMessage.java  # MyBatis Plus 注解
 ├── dto/command/                   # UserLoginCommandDTO、UserRegisterCommandDTO
@@ -62,14 +76,16 @@ src/main/java/com/ai/aiproject/
 ├── dto/response/                  # UserLoginResponseDTO、StructOutPutResponseDTO（StreamChatSession record）
 ├── enums/                         # ResultCode、UserType、UserStatus
 ├── common/                        # Result.java、GlobalExceptionHandler.java、SecurityConstants.java（白名单）
-├── config/                        # JwtConfig、SecurityConfig、JwtAuthenticationFilter、DbChatMemory（基于 DB 的 ChatMemory，会话记忆）、TokenBlacklist（内存 JWT 黑名单）、MybatisPlusConfig（分页拦截器）
+├── config/                        # JwtConfig、SecurityConfig、JwtAuthenticationFilter、DbChatMemory（基于 DB 的 ChatMemory，会话记忆）、TokenBlacklist（内存 JWT 黑名单）、MybatisPlusConfig（分页拦截器）、OssProperties（oss.*）
 ├── Exception/BusinessException.java   # 注意：包名大写 E
 └── Utils/                             # 注意：包名大写 U
     ├── UserConvertTool.java           # entity↔DTO 转换工具
     ├── JwtTool.java                   # JWT 生成/解析工具
     ├── ResponseWriteTool.java         # 过滤器认证失败响应写入工具（HTTP 401 + Result JSON）
     ├── PromptManage.java              # AI 系统提示词（心理疏导 + 日记情绪分析）
-    └── EmotionDiaryTool.java          # 主要情绪白名单 + 评分范围解析（纯静态，含单测）
+    ├── EmotionDiaryTool.java          # 主要情绪白名单 + 评分范围解析（纯静态，含单测）
+    ├── OssFileTool.java               # 图片类型/大小校验 + OSS 对象键生成（纯静态，含单测）
+    └── AuthzTool.java                 # isAdmin / requireAdmin（Service 层复用）
 ```
 
 ## 分层与代码约定
