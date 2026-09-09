@@ -5,14 +5,19 @@ import com.ai.aiproject.Utils.SecurityContextTool;
 import com.ai.aiproject.common.Result;
 import com.ai.aiproject.dto.ConsultationSessionCreateDTO;
 import com.ai.aiproject.dto.ConsultationStreamDTO;
+import com.ai.aiproject.dto.query.SessionPageQueryDTO;
 import com.ai.aiproject.dto.response.ConsultationMessageResponseDTO;
+import com.ai.aiproject.dto.response.SessionEmotionVO;
+import com.ai.aiproject.dto.response.SessionPageItemVO;
 import com.ai.aiproject.dto.response.StructOutPutResponseDTO;
 import com.ai.aiproject.enums.ResultCode;
 import com.ai.aiproject.service.SessionService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -52,5 +57,30 @@ public class SessionController {
     @GetMapping("/sessions/{sessionId}/messages")
     public Result<List<ConsultationMessageResponseDTO>> getMessages(@PathVariable String sessionId) {
         return Result.ok(sessionService.getMessages(sessionId));
+    }
+    /**
+     * 会话分页列表（管理员看全部，普通用户看自己）
+     * GET /api/psychological-chat/sessions
+     */
+    @GetMapping("/sessions")
+    public Result<Page<SessionPageItemVO>> sessions(SessionPageQueryDTO queryDTO) {
+        return Result.ok(sessionService.pageSessions(queryDTO));
+    }
+    /**
+     * 删除会话（本人或管理员；级联删除消息；幂等）
+     * DELETE /api/psychological-chat/sessions/{sessionId}
+     */
+    @DeleteMapping("/sessions/{sessionId}")
+    public Result<Void> deleteSession(@PathVariable String sessionId) {
+        sessionService.deleteSession(sessionId);
+        return Result.ok();
+    }
+    /**
+     * 会话情绪分析（增量缓存）
+     * GET /api/psychological-chat/session/{sessionId}/emotion
+     */
+    @GetMapping("/session/{sessionId}/emotion")
+    public Result<SessionEmotionVO> sessionEmotion(@PathVariable String sessionId) {
+        return Result.ok(sessionService.getSessionEmotion(sessionId));
     }
 }
