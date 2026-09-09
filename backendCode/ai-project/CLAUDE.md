@@ -26,6 +26,8 @@ mvn test                   # 运行全部测试
 mvn test -Dtest=AiProjectApplicationTests   # 运行单个测试类
 ```
 
+> 注：`pom.xml` 已为 surefire 配置 `-Djdk.attach.allowAttachSelf=true`。部分 JDK 默认禁止 agent self-attach，否则 Mockito 内联 mock maker（ByteBuddy）初始化失败，`AiProjectApplicationTests.contextLoads` 会报 “Could not self-attach to current VM”。
+
 ## 已实现接口
 
 | 模块 | 接口 | 状态 |

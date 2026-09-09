@@ -103,6 +103,15 @@
 
     <build>
         <plugins>
+            <!-- 允许 JVM self-attach：否则部分 JDK 下 Mockito 内联 mock maker（ByteBuddy agent）初始化失败，
+                 导致 @SpringBootTest contextLoads 报 “Could not self-attach to current VM” -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-Djdk.attach.allowAttachSelf=true</argLine>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
