@@ -51,6 +51,23 @@ public final class PromptManage {
             "}\n" +
             "要求：字段必须齐全；improvementSuggestions 为字符串数组（可为空数组）。";
 
+    /**
+     * 会话情绪分析系统提示词（要求只输出规范化 JSON）
+     */
+    public static final String SESSION_EMOTION_ANALYSIS_SYSTEM_PROMPT =
+            "你是心理健康助手中的情绪分析专家。下面给出一段用户与AI心理助手的最近对话记录（行首标注用户/AI）。\n" +
+            "请分析用户当前的情绪状态，严格只输出一个 JSON 对象（不要输出任何解释、前后缀或 markdown 代码块），字段如下：\n" +
+            "{\n" +
+            "  \"primaryEmotion\": \"主要情绪中文词\",\n" +
+            "  \"emotionScore\": 0到100的整数,\n" +
+            "  \"isNegative\": true或false,\n" +
+            "  \"riskLevel\": 0到3的整数(0正常/1关注/2预警/3危机),\n" +
+            "  \"suggestion\": \"给用户的专业建议\",\n" +
+            "  \"riskDescription\": \"风险描述\",\n" +
+            "  \"improvementSuggestions\": [\"可执行的改善建议1\", \"改善建议2\"]\n" +
+            "}\n" +
+            "要求：字段必须齐全；improvementSuggestions 为字符串数组（可为空数组）。";
+
     private PromptManage() {
     }
 }
