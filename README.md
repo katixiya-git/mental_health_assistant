@@ -44,8 +44,9 @@
 ├── backendCode/ai-project        # 后端主工程（Spring Boot，com.ai.aiproject）
 ├── frontendCode/ai-vue           # 前端工程（Vue 3 + Vite）
 ├── docs/
-│   ├── sql/                      # 建表 DDL（emotion_diary、knowledge_*，幂等）
-│   └── superpowers/              # 各功能模块的设计规格与实现计划
+│   ├── sql/                      # 全量建库脚本 mental_health_assistant.sql（幂等，含默认管理员）
+│   ├── superpowers/              # 各功能模块的设计规格与实现计划（历史设计文档）
+│   └── archive/                  # 历史文档（接口缺口清单/前端契约，功能均已实现，存档备查）
 └── README.md / LICENSE
 ```
 
@@ -53,11 +54,12 @@
 
 **环境**：JDK 17 · Maven 3.6+ · MySQL 8 · Node.js 18+
 
-1. **初始化数据库**：创建库 `mental_health_assistant` 并执行建表脚本（幂等）：
+1. **初始化数据库**：导入全量建库脚本（自动创建 `mental_health_assistant` 库、9 张表并写入默认管理员）：
    ```bash
-   mysql -uroot -p123456 mental_health_assistant < docs/sql/2026-09-08-emotion-diary.sql
-   mysql -uroot -p123456 mental_health_assistant < docs/sql/2026-09-08-knowledge.sql
+   mysql -uroot -p < docs/sql/mental_health_assistant.sql
    ```
+   > 9 张表：user、consultation_session、consultation_message、emotion_diary、knowledge_category、knowledge_article，及预留设计表 user_favorite / ai_analysis_task / sys_file_info（当前版本接口未启用）。
+   > 默认管理员：`admin / 123456`（user_type=2，BCrypt 存储，登录后请修改）。
 2. **配置环境变量**（密钥不入库；均为可覆盖项）：
 
    | 变量 | 用途 |
@@ -76,7 +78,7 @@
    cd frontendCode/ai-vue
    npm install && npm run dev
    ```
-   访问 http://localhost:5173 —— 注册普通账号体验用户端；后台 `/back` 需管理员（`user_type=2`）。
+   访问 http://localhost:5173 —— 注册普通账号体验用户端；后台 `/back` 需管理员，默认管理员 `admin / 123456`（user_type=2）。
 
 > 心理健康提示：AI 回复与情绪分析仅供参考，不构成医疗诊断；严重心理困扰请及时寻求专业帮助。
 

@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-「宁渡课堂」心理健康助手后端，前后端分离，核心功能：情绪日记、AI 心理咨询、知识科普、用户管理、数据分析。
+「心理健康AI助手」后端，前后端分离，核心功能：情绪日记、AI 心理咨询、知识科普、用户管理、数据分析。
 
 **当前状态**：项目骨架 + 用户模块已完成（登录、注册）。包根 `com.ai.aiproject`，入口 `AiProjectApplication.java`（`@SpringBootApplication` + `@MapperScan("com.ai.aiproject.mapper")`）。
 
@@ -117,16 +117,18 @@ src/main/java/com/ai/aiproject/
 
 ## 数据库要点
 
-- 库 `mental_health_assistant`，表 `user`：`username`/`email`/`phone` 三列各 UNIQUE（注册时代码层先查重，DB 唯一键兜底）
+- 库 `mental_health_assistant`；全量（幂等）建库脚本为 `docs/sql/mental_health_assistant.sql`（9 张表 + 默认管理员 `admin/123456`）
+- 业务表：`user`、`consultation_session`、`consultation_message`、`emotion_diary`、`knowledge_category`、`knowledge_article`
+- **预留设计表（当前版本接口未启用，代码无引用）**：`user_favorite`（文章收藏）、`ai_analysis_task`（AI 分析任务队列）、`sys_file_info`（上传文件登记）
+- `user`：`username`/`email`/`phone` 三列各 UNIQUE（注册时代码层先查重，DB 唯一键兜底）
 - 密码一律 BCrypt 存储（`$2a$`），登录用 `passwordEncoder.matches(...)`
 
-## 目标架构（后续待落地，以 `.CLAUDE/宁渡课堂-后端技术文档.md` 为准）
+## 目标架构（后续可扩展方向）
 
 - **AI 集成**：Spring AI（`spring-ai-openai-spring-boot-starter:1.0.0-M5`，已接入阿里云百炼），模型 `qwen-plus`，走 `/v1/chat/completions`
 - **缓存**：Spring Data Redis（依赖未引入；token 黑名单已用内存实现 config/TokenBlacklist，Redis 缓存/集群共享黑名单待落地）
 - 其他：Spring AOP、Spring Mail、hutool
-- 前端已使用但未实现的接口见技术文档第 6 节（咨询/日记/知识库/文件/分析），路径以 `controller` 实际 `@RequestMapping` 为准（注意 `/api` 前缀）
-- **待补接口的逐条缺口清单（16 项，含参数/返回结构/决策点/落地顺序）见仓库根 `docs/接口缺口清单.md`，行号级前端契约证据见同目录 `前端调用契约报告.md`；开始补模块前须先制定 Plan**
+- 各功能模块的设计规格与实现计划见 `docs/superpowers/`；前端调用契约的历史缺口清单与行号级证据已归档至 `docs/archive/`（对应功能均已实现）
 
 ### 配置要点（参考）
 - **JWT**（已落地）：`jwt.secret`、`expiration` 24h、`refresh-expiration` 7天、header `Authorization`、prefix `"Bearer "`
