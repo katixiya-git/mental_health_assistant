@@ -3,6 +3,10 @@
 > 一个功能完整、适合学习与二次开发的前后端分离 **AI 心理健康 Web 应用**。
 > 面向用户提供 **AI 心理咨询（流式对话）**、**情绪日记与 AI 情绪分析**、**心理健康科普知识库**；面向管理员提供数据看板与内容/数据管理后台。
 
+> **项目来源**：本项目是跟随 **宁波课堂** 的前后端实战课程（课程提供技术文档与课件）完成的练手项目。
+> **代码全部由本人独立编写**：后端 6 个业务模块（用户 / 咨询 / 日记 / 知识库 / 文件 / 数据分析）的接口与实现、前端全部页面与组件、数据库设计与全量建库脚本、SSE 流式链路的排查与修复、登出 token 黑名单（Redis 实现）、以及各模块单元测试，均可在本仓库的提交历史中逐条对应。
+> 课程方提供的材料（课件、课堂技术文档）**未随仓库分发，已从版本库中移除**；本仓库只保留本人编写的代码与本人整理的设计/实现文档。
+
 ---
 
 ## ✨ 技术栈
@@ -11,7 +15,7 @@
 |---|---|
 | 后端 | Spring Boot 3.4.1 · MyBatis-Plus 3.5.16 · Java 17 · Spring AI（阿里云百炼 qwen-plus）· 阿里云 OSS |
 | 数据库 | MySQL 8（mental_health_assistant） |
-| 安全 | Spring Security + JWT（auth0）· BCrypt 密码哈希 · token 内存黑名单登出 · 角色/归属双重鉴权 |
+| 安全 | Spring Security + JWT（auth0）· BCrypt 密码哈希 · token 黑名单登出（Redis，TTL 自动回收）· 角色/归属双重鉴权 |
 | 前端 | Vue 3（`<script setup>`）· Vite · Element Plus · Pinia · vue-router · axios · ECharts · wangeditor（富文本） |
 | 部署 | 前后端分离：Vite dev 代理（`/api` → 8080）；接口统一 `/api` 前缀 + `Result` 信封 |
 
@@ -29,11 +33,11 @@
 - **咨询记录**：分页查看全部用户会话、对话消息详情
 - **情绪日志**：按用户/评分范围筛选，详情含 AI 情绪分析结果，支持删除
 
-## 🔒 亮点与健壮性要点（本仓库实际实现）
+## 🔒 亮点与健壮性要点
 
 - **AI 能力**：对话与两类情绪分析（日记/会话）均接阿里云百炼 qwen-plus；结构化 JSON 规范化后落库，AI 异常/缺 Key 自动降级，不阻塞核心流程；会话情绪分析采用“有新消息才重算”的增量缓存
 - **流式对话**：SSE 推送增量内容，React 管线空 chunk 过滤 + 异步分发放行，断流自动兜底
-- **认证与鉴权**：JWT（stateless）+ 自定义过滤器；登出将 token 加入内存黑名单真正失效；管理员接口服务层校验（A0301），越权与跨用户访问被拒绝
+- **认证与鉴权**：JWT（stateless）+ 自定义过滤器；登出把 token 加入 Redis 黑名单（key 存 SHA-256 摘要，TTL 取自 JWT 的 exp 由 Redis 自动回收，多实例共享）真正失效；管理员接口服务层校验（A0301），越权与跨用户访问被拒绝
 - **数据一致性**：文章阅读量用 `read_count = read_count + 1` 原子自增；删除会话级联清理消息；关键写操作事务化
 - **上传安全**：OSS 封面上传做类型白名单（jpg/png/webp 等）+ 大小（≤5MB）限制 + UUID 重命名
 - **工程约定**：接口统一 `Result{code,msg,data}` 信封；分页参数多别名兼容；实体→DTO 分层转换；纯静态工具自带单测
@@ -52,7 +56,7 @@
 
 ## 🚀 快速开始
 
-**环境**：JDK 17 · Maven 3.6+ · MySQL 8 · Node.js 18+
+**环境**：JDK 17 · Maven 3.6+ · MySQL 8 · **Redis 6+** · Node.js 18+
 
 1. **初始化数据库**：导入全量建库脚本（自动创建 `mental_health_assistant` 库、9 张表并写入默认管理员）：
    ```bash
@@ -67,6 +71,7 @@
    | `DASHSCOPE_API_KEY` | 阿里云百炼 API-KEY（AI 对话与情绪分析） |
    | `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | 阿里云 OSS AccessKey（文章封面上传） |
    | `DB_PASSWORD`（可选，默认 `123456`） | 数据库密码；`JWT_SECRET` 可选覆盖 JWT 密钥 |
+   | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`（可选，默认 `localhost:6379` 无密码） | Redis 连接（登出 token 黑名单）；Redis 不可用时黑名单校验降级放行并打 ERROR 日志，不阻塞其他功能 |
 
 3. **启动后端**（端口 8080）：
    ```bash
