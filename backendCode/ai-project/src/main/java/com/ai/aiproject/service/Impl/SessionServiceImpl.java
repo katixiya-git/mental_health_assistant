@@ -23,6 +23,7 @@ import com.ai.aiproject.service.SessionService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -34,6 +35,7 @@ import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -44,6 +46,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SessionServiceImpl implements SessionService {
@@ -144,7 +147,7 @@ public class SessionServiceImpl implements SessionService {
             return Flux.just(sseError(ResultCode.SYSTEM_ERROR, e.getMessage()));
         }
 
-        // 5. 流式调用 + 转 SSE（data 为 JSON：{code:"200", data:{content}}，与前端 fetchEventSource 契约一致）+ 流结束时持久化 AI 回复
+        // 5. 流式调用 + 转 SSE（data 为 JSON：{code:"200", data:{content}}，与前端 fetchEventSource 契约一致）
         StringBuilder aiReply = new StringBuilder();
         return chatModel.stream(prompt)
                 .filter(resp -> {
@@ -152,25 +155,38 @@ public class SessionServiceImpl implements SessionService {
                     String content = resp.getResult().getOutput().getContent();
                     return content != null && !content.isBlank();
                 })
-                .map(resp -> {
-                    String content = resp.getResult().getOutput().getContent();
-                    aiReply.append(content);
-                    return ServerSentEvent.<String>builder().event("message")
-                            .data(JSONUtil.toJsonStr(JSONUtil.createObj()
-                                    .set("code", ResultCode.SUCCESS.getCode())
-                                    .set("data", JSONUtil.createObj().set("content", content))))
-                            .build();
-                })
+                // 累积回复内容属于副作用，放在 doOnNext；map 语义是纯函数，不应修改外部可变状态
+                // （放在 map 里的话，一旦该 Flux 被重复订阅（例如以后加重试），aiReply 会累积两遍）
+                .doOnNext(resp -> aiReply.append(resp.getResult().getOutput().getContent()))
+                .map(resp -> ServerSentEvent.<String>builder().event("message")
+                        .data(JSONUtil.toJsonStr(JSONUtil.createObj()
+                                .set("code", ResultCode.SUCCESS.getCode())
+                                .set("data", JSONUtil.createObj()
+                                        .set("content", resp.getResult().getOutput().getContent()))))
+                        .build())
                 .concatWith(Flux.just(ServerSentEvent.<String>builder().event("done").data("completed").build()))
-                .doOnComplete(() -> consultationMessageMapper.insert(
-                        ConsultationMessage.builder()
-                                .sessionId(sessionIdLong)
-                                .senderType(2)          // 2 AI
-                                .messageType(1)
-                                .content(aiReply.toString())
-                                .aiModel(aiModel)
-                                .createdAt(LocalDateTime.now())
-                                .build()))
+                // 用 doFinally 而不是 doOnComplete：客户端断开页面 / 用户停止生成 / 响应式链路取消时，
+                // 触发的是【取消】信号而非【完成】信号，doOnComplete 不执行 —— 会导致已生成的回复丢失，
+                // 库里只剩一条"有提问没回答"的孤儿用户消息。
+                // ⚠️ 位置很关键：必须留在 onErrorResume 之前。放到它后面的话，错误已被替换成正常事件，
+                //    此处就永远只能看到 ON_COMPLETE，"出错不落库"的判断会失效。
+                .doFinally(signalType -> {
+                    if (signalType != SignalType.ON_ERROR && aiReply.length() > 0) {
+                        try {
+                            consultationMessageMapper.insert(ConsultationMessage.builder()
+                                    .sessionId(sessionIdLong)
+                                    .senderType(2)          // 2 AI
+                                    .messageType(1)
+                                    .content(aiReply.toString())
+                                    .aiModel(aiModel)
+                                    .createdAt(LocalDateTime.now())
+                                    .build());
+                        } catch (Exception e) {
+                            // 此时响应已终止，异常无法再回传给客户端，只能落日志（不能静默）
+                            log.error("会话 {} 的 AI 回复落库失败（signal={}）", sessionIdLong, signalType, e);
+                        }
+                    }
+                })
                 .onErrorResume(e -> Flux.just(sseError(ResultCode.SYSTEM_ERROR, e.getMessage())));
     }
 
